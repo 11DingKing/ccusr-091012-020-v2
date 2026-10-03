@@ -6,8 +6,7 @@ import io
 from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from apps.core.response import success_response, error_response
 from .models import Unit, Category, Variety, Goods, StockIn, StockOut, Warning, Approval
@@ -460,105 +459,9 @@ class VarietyTemplateView(APIView):
         return response
 
 
-class VarietyImportView(APIView):
-    """品种导入视图"""
-    permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-    
-    def post(self, request):
-        if 'file' not in request.FILES:
-            return error_response(message='请上传文件')
-        
-        file = request.FILES['file']
-        
-        try:
-            wb = load_workbook(file)
-            ws = wb.active
-        except Exception as e:
-            return error_response(message='文件格式错误，请上传Excel文件')
-        
-        # 获取所有品类及其单位
-        categories = {c.name: c for c in Category.objects.filter(is_active=True).select_related('unit')}
-        
-        can_import = []
-        cannot_import = []
-        
-        for row in range(2, ws.max_row + 1):
-            variety_name = ws.cell(row=row, column=1).value
-            category_name = ws.cell(row=row, column=2).value
-            unit_name = ws.cell(row=row, column=3).value
-            
-            if not variety_name:
-                continue
-            
-            variety_name = str(variety_name).strip()
-            category_name = str(category_name).strip() if category_name else ''
-            unit_name = str(unit_name).strip() if unit_name else ''
-            
-            # 验证
-            error_msg = None
-            
-            if not variety_name:
-                error_msg = '品种名称不能为空'
-            elif len(variety_name) > 20:
-                error_msg = '品种名称最多20个字'
-            elif not category_name:
-                error_msg = '品类不能为空'
-            elif category_name not in categories:
-                error_msg = f'品类"{category_name}"不存在'
-            elif not unit_name:
-                error_msg = '单位不能为空'
-            elif categories.get(category_name) and categories[category_name].unit.name != unit_name:
-                error_msg = f'单位与品类不匹配，应为"{categories[category_name].unit.name}"'
-            elif Variety.objects.filter(name=variety_name, category__name=category_name).exists():
-                error_msg = '该品种已存在'
-            
-            if error_msg:
-                cannot_import.append({
-                    'row': row,
-                    'variety': variety_name,
-                    'category': category_name,
-                    'unit': unit_name,
-                    'reason': error_msg
-                })
-            else:
-                can_import.append({
-                    'row': row,
-                    'variety': variety_name,
-                    'category': category_name,
-                    'unit': unit_name
-                })
-        
-        # 如果是预览请求
-        if request.data.get('preview') == 'true':
-            return success_response(data={
-                'can_import': can_import,
-                'cannot_import': cannot_import,
-                'can_import_count': len(can_import),
-                'cannot_import_count': len(cannot_import)
-            })
-        
-        # 执行导入
-        imported_count = 0
-        for item in can_import:
-            category = categories[item['category']]
-            Variety.objects.create(
-                name=item['variety'],
-                category=category,
-                created_by=request.user
-            )
-            imported_count += 1
-        
-        logger.info(f"User {request.user.username} imported {imported_count} varieties")
-        
-        return success_response(
-            data={
-                'imported_count': imported_count,
-                'failed_count': len(cannot_import),
-                'failed_items': cannot_import
-            },
-            message=f'成功导入 {imported_count} 个品种'
-        )
+# ==================== 品种导入（暂存-校验-发布） ====================
+# 导入流程已迁移至 apps.warehouse.importing 与 import_views：
+# 上传只入暂存表，逐行校验、修订后原子发布，不再直接写正式表。
 
 
 # ==================== 其他视图占位 ====================

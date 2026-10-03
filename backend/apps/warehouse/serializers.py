@@ -2,7 +2,10 @@
 仓库管理序列化器
 """
 from rest_framework import serializers
-from .models import Unit, Category, Variety, Goods, StockIn, StockOut, Warning, Approval
+from .models import (
+    Unit, Category, Variety, Goods, StockIn, StockOut, Warning, Approval,
+    ImportBatch, ImportRow,
+)
 
 
 class UnitSerializer(serializers.ModelSerializer):
@@ -193,10 +196,52 @@ class ApprovalSerializer(serializers.ModelSerializer):
     """审批记录序列化器"""
     approver_name = serializers.CharField(source='approver.username', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    
+
     class Meta:
         model = Approval
         fields = [
             'id', 'stock_out', 'approver', 'approver_name',
             'status', 'status_display', 'remark', 'created_at', 'updated_at'
         ]
+
+
+class ImportRowSerializer(serializers.ModelSerializer):
+    """导入暂存行序列化器"""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    target_variety_id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = ImportRow
+        fields = [
+            'id', 'row_no', 'variety_name', 'category_name', 'unit_name',
+            'status', 'status_display', 'errors',
+            'target_variety_id', 'published', 'updated_at',
+        ]
+        read_only_fields = fields
+
+
+class ImportBatchSerializer(serializers.ModelSerializer):
+    """导入批次序列化器"""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    published_by_name = serializers.CharField(source='published_by.username', read_only=True)
+    can_publish = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ImportBatch
+        fields = [
+            'id', 'file_name', 'status', 'status_display',
+            'total_count', 'create_count', 'update_count',
+            'conflict_count', 'error_count', 'can_publish',
+            'created_by', 'created_by_name', 'published_by_name',
+            'publishing_at', 'published_at', 'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+    def get_can_publish(self, obj):
+        return (
+            obj.status == ImportBatch.STATUS_DRAFT
+            and obj.total_count > 0
+            and obj.error_count == 0
+            and obj.conflict_count == 0
+        )
